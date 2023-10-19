@@ -58,6 +58,10 @@ resource "aws_security_group" "vpc-web" {
     ipv6_cidr_blocks = ["::/0"]
   }
 
+  lifecycle {
+    create_before_destroy = true # NOTE: this to remove SG when exec terraform destroy
+  }
+
   tags = {
     Name = "vpc-web"
   }

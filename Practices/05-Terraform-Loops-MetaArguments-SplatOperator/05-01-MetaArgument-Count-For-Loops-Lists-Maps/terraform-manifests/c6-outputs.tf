@@ -10,17 +10,15 @@ output "for_output_map1" {
 
 output "for_output_map2" {
   description = "For loop with Map - Advanced"
-  value       = { for c, instance in aws_instance.ec2-05 : c => instance.public_dns }
+  value       = { for c, instance in aws_instance.ec2-05 : c => instance.public_dns } # NOTE: `c` is index
 }
 
 output "legacy_splat_instance_publicdns" {
   description = "Legacy splat operator"
-  # NOTE: if `count` in the aws_instance then have to use * to log public_dns for each instance
-  value = aws_instance.ec2-05.*.public_dns
+  value = aws_instance.ec2-05.*.public_dns # NOTE: if `count` in the aws_instance then have to use * to log public_dns for each instance
 }
 
 output "latest_splat_instance_publicdns" {
   description = "Generalized latest splat operator"
-  # NOTE: if `count` in the aws_instance then have to use * to log public_dns for each instance
-  value = aws_instance.ec2-05[*].public_dns
+  value = aws_instance.ec2-05[*].public_dns # NOTE: if `count` in the aws_instance then have to use * to log public_dns for each instance
 }
