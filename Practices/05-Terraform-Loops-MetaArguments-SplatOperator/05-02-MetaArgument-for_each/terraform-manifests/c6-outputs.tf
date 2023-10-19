@@ -1,24 +1,20 @@
-output "for_output_list" {
-  description = "For loop with List"
-  value       = [for instance in aws_instance.ec2-05 : instance.public_dns]
+
+// splat not working with for_each
+
+output "instance_publicip" {
+  description = "EC2 instance public IP"
+  #value = aws_instance.myec2vm.*.public_ip   # Legacy Splat
+  #value = aws_instance.myec2vm[*].public_ip  # Latest Splat
+  value = toset([for instance in aws_instance.ec2-05: instance.public_ip])
 }
 
-output "for_output_map1" {
-  description = "For loop with Map"
-  value       = { for instance in aws_instance.ec2-05 : instance.id => instance.public_dns } #NOTE: `instance.id` is key of the key-value pair
+output "instance_publicdns" {
+  description = "EC2 instance public DNS"
+  #value = aws_instance.myec2vm.*.public_ip   # Legacy Splat
+  #value = aws_instance.myec2vm[*].public_ip  # Latest Splat
+  value = toset([for instance in aws_instance.ec2-05: instance.public_dns])
 }
 
-output "for_output_map2" {
-  description = "For loop with Map - Advanced"
-  value       = { for c, instance in aws_instance.ec2-05 : c => instance.public_dns } # NOTE: `c` is index
-}
-
-output "legacy_splat_instance_publicdns" {
-  description = "Legacy splat operator"
-  value = aws_instance.ec2-05.*.public_dns # NOTE: if `count` in the aws_instance then have to use * to log public_dns for each instance
-}
-
-output "latest_splat_instance_publicdns" {
-  description = "Generalized latest splat operator"
-  value = aws_instance.ec2-05[*].public_dns # NOTE: if `count` in the aws_instance then have to use * to log public_dns for each instance
+output "instance_publicdns2" {
+  value = tomap({ for az, instance in aws_instance.ec2-05: az => instance.public_dns })
 }
