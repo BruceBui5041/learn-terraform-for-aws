@@ -61,4 +61,8 @@ resource "aws_security_group" "vpc-web" {
   tags = {
     Name = "vpc-web"
   }
+
+  lifecycle {
+    create_before_destroy = true # NOTE: this to remove SG when exec terraform destroy
+  }
 }
