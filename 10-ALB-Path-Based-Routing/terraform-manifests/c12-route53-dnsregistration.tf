@@ -4,8 +4,10 @@ resource "aws_route53_record" "apps_dns" {
   name    = "apps.devopsincloud.com"
   type    = "A"
   alias {
-    name                   = module.alb.this_lb_dns_name
-    zone_id                = module.alb.this_lb_zone_id
+    #name                   = module.alb.this_lb_dns_name
+    #zone_id                = module.alb.this_lb_zone_id
+    name                   = module.alb.dns_name
+    zone_id                = module.alb.zone_id
     evaluate_target_health = true
   }  
 }

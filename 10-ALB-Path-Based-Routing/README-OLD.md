@@ -14,6 +14,10 @@
 ## Step-01: Introduction
 - We are going to implement Context Path based Routing in AWS Application Load Balancer using Terraform.
 - To achieve that we are going to implement many series of steps. 
+- Our core focus in the entire section should be primarily targeted to two things
+  - **Listener Indexes:** `https_listener_index = 0`
+  - **Target Group Indexes:** `target_group_index = 0`
+- If we are good with understanding these indexes and how to reference them, we are good with handling these multiple context paths or multiple header based routes or anything from ALB perspective.   
 - We are going to implement the following using AWS ALB 
 1. Fixed Response for /* : http://apps.devopsincloud.com   
 2. App1 /app1* goes to App1 EC2 Instances: http://apps.devopsincloud.com/app1/index.html
@@ -56,26 +60,26 @@ output "mydomain_zoneid" {
 - We will change the module name from `ec2_private` to `ec2_private_app1`
 - We will change the `name` to `"${var.environment}-app1"`
 ```t
-# AWS EC2 Instance Terraform Module
 # EC2 Instances that will be created in VPC Private Subnets for App1
 module "ec2_private_app1" {
   depends_on = [ module.vpc ] # VERY VERY IMPORTANT else userdata webserver provisioning will fail
   source  = "terraform-aws-modules/ec2-instance/aws"
-  #version = "2.17.0"
-  version = "5.5.0"    
+  version = "2.17.0"
   # insert the 10 required variables here
   name                   = "${var.environment}-app1"
   ami                    = data.aws_ami.amzlinux2.id
   instance_type          = var.instance_type
   key_name               = var.instance_keypair
+  #monitoring             = true
+  vpc_security_group_ids = [module.private_sg.this_security_group_id]
+  #subnet_id              = module.vpc.public_subnets[0]  
+  subnet_ids = [
+    module.vpc.private_subnets[0],
+    module.vpc.private_subnets[1]
+  ]  
+  instance_count         = var.private_instance_count
   user_data = file("${path.module}/app1-install.sh")
   tags = local.common_tags
-
-
-# Changes as part of Module version from 2.17.0 to 5.5.0
-  for_each = toset(["0", "1"])
-  subnet_id =  element(module.vpc.private_subnets, tonumber(each.key))
-  vpc_security_group_ids = [module.private_sg.security_group_id]
 }
 ```
 
@@ -90,52 +94,50 @@ module "ec2_private_app1" {
 module "ec2_private_app2" {
   depends_on = [ module.vpc ] # VERY VERY IMPORTANT else userdata webserver provisioning will fail
   source  = "terraform-aws-modules/ec2-instance/aws"
-  #version = "2.17.0"
-  version = "5.5.0"    
+  version = "2.17.0"
   # insert the 10 required variables here
   name                   = "${var.environment}-app2"
   ami                    = data.aws_ami.amzlinux2.id
   instance_type          = var.instance_type
   key_name               = var.instance_keypair
+  #monitoring             = true
+  vpc_security_group_ids = [module.private_sg.this_security_group_id]
+  #subnet_id              = module.vpc.public_subnets[0]  
+  subnet_ids = [
+    module.vpc.private_subnets[0],
+    module.vpc.private_subnets[1]
+  ]  
+  instance_count         = var.private_instance_count
   user_data = file("${path.module}/app2-install.sh")
   tags = local.common_tags
-
-# Changes as part of Module version from 2.17.0 to 5.5.0
-  for_each = toset(["0", "1"])
-  subnet_id =  element(module.vpc.private_subnets, tonumber(each.key))
-  vpc_security_group_ids = [module.private_sg.security_group_id]
 }
 ```
 
 ## Step-07: c7-02-ec2instance-outputs.tf
 - Update App1 and App2 Outputs based on new module names
 ```t
-
-# Private EC2 Instances - App1
+# App1 - Private EC2 Instances
 ## ec2_private_instance_ids
-output "ec2_private_instance_ids_app1" {
+output "app1_ec2_private_instance_ids" {
   description = "List of IDs of instances"
-  value = [for ec2private in module.ec2_private_app1: ec2private.id ]   
+  value       = module.ec2_private_app1.id
 }
-
 ## ec2_private_ip
-output "ec2_private_ip_app1" {
+output "app1_ec2_private_ip" {
   description = "List of private IP addresses assigned to the instances"
-  value = [for ec2private in module.ec2_private_app1: ec2private.private_ip ]  
+  value       = module.ec2_private_app1.private_ip 
 }
 
-
-# Private EC2 Instances - App2
+# App2 - Private EC2 Instances
 ## ec2_private_instance_ids
-output "ec2_private_instance_ids_app2" {
+output "app2_ec2_private_instance_ids" {
   description = "List of IDs of instances"
-  value = [for ec2private in module.ec2_private_app2: ec2private.id ]   
+  value       = module.ec2_private_app2.id
 }
-
 ## ec2_private_ip
-output "ec2_private_ip_app2" {
+output "app2_ec2_private_ip" {
   description = "List of private IP addresses assigned to the instances"
-  value = [for ec2private in module.ec2_private_app2: ec2private.private_ip ]  
+  value       = module.ec2_private_app2.private_ip 
 }
 ```
 ## Step-08: c11-acm-certificatemanager.tf
@@ -158,76 +160,51 @@ trimsuffix("devopsincloud.com.", ".")
 # ACM Module - To create and Verify SSL Certificates
 module "acm" {
   source  = "terraform-aws-modules/acm/aws"
-  #version = "2.14.0"
-  version = "5.0.0"
+  version = "~> 2.0"
 
-  domain_name  = trimsuffix(data.aws_route53_zone.mydomain.name, ".")
-  zone_id      = data.aws_route53_zone.mydomain.zone_id 
-
+  domain_name = trimsuffix(data.aws_route53_zone.mydomain.name, ".") 
+  zone_id     = data.aws_route53_zone.mydomain.id
   subject_alternative_names = [
     "*.devopsincloud.com"
   ]
-  tags = local.common_tags
-
-  # Validation Method
-  validation_method = "DNS"
-  wait_for_validation = true  
+  tags = local.common_tags   
 }
 
 # Output ACM Certificate ARN
 output "acm_certificate_arn" {
-  description = "The ARN of the certificate"
-  value       = module.acm.acm_certificate_arn
+  description = "ACM Certificate ARN"
+  value = module.acm.this_acm_certificate_arn
 }
 ```
 
 ## Step-09: c10-02-ALB-application-loadbalancer.tf
 - [Terraform ALB Module](https://registry.terraform.io/modules/terraform-aws-modules/alb/aws/latest)
 - [Terraform ALB Module - Complete Example](https://registry.terraform.io/modules/terraform-aws-modules/alb/aws/latest/examples/complete-alb)
-### Step-09-01: Create Target Groups mytg1 and mytg2
+### Step-09-01: HTTP to HTTPS Redirect
 ```t
-# Target Groups
-  target_groups = {
-  # Target Group-1: mytg1
-   mytg1 = {
-      # VERY IMPORTANT: We will create aws_lb_target_group_attachment resource separately when we use create_attachment = false, refer above GitHub issue URL.
-      ## Github ISSUE: https://github.com/terraform-aws-modules/terraform-aws-alb/issues/316
-      ## Search for "create_attachment" to jump to that Github issue solution
-      create_attachment = false
-      name_prefix                       = "mytg1-"
-      protocol                          = "HTTP"
-      port                              = 80
-      target_type                       = "instance"
-      deregistration_delay              = 10
-      load_balancing_cross_zone_enabled = false
-      protocol_version = "HTTP1"
-      health_check = {
-        enabled             = true
-        interval            = 30
-        path                = "/app1/index.html"
-        port                = "traffic-port"
-        healthy_threshold   = 3
-        unhealthy_threshold = 3
-        timeout             = 6
-        protocol            = "HTTP"
-        matcher             = "200-399"
-      }# End of Health Check Block
-      tags = local.common_tags # Target Group Tags 
-    } # END of Target Group-1: mytg1
-
-  # Target Group-2: mytg2 
-   mytg2 = {
-      # VERY IMPORTANT: We will create aws_lb_target_group_attachment resource separately when we use create_attachment = false, refer above GitHub issue URL.
-      ## Github ISSUE: https://github.com/terraform-aws-modules/terraform-aws-alb/issues/316
-      ## Search for "create_attachment" to jump to that Github issue solution      
-      create_attachment = false
-      name_prefix                       = "mytg2-"
-      protocol                          = "HTTP"
-      port                              = 80
-      target_type                       = "instance"
-      deregistration_delay              = 10
-      load_balancing_cross_zone_enabled = false
-      protocol_version = "HTTP1"
+  # HTTP Listener - HTTP to HTTPS Redirect
+    http_tcp_listeners = [
+    {
+      port               = 80
+      protocol           = "HTTP"
+      action_type = "redirect"
+      redirect = {
+        port        = "443"
+        protocol    = "HTTPS"
+        status_code = "HTTP_301"
+      }
+    }
+  ]  
+```
+### Step-09-02: Add Target Group app2
+```t
+    # App2 Target Group - TG Index = 1
+    {
+      name_prefix          = "app2-"
+      backend_protocol     = "HTTP"
+      backend_port         = 80
+      target_type          = "instance"
+      deregistration_delay = 10
       health_check = {
         enabled             = true
         interval            = 30
@@ -239,123 +216,92 @@ output "acm_certificate_arn" {
         protocol            = "HTTP"
         matcher             = "200-399"
       }
-      tags = local.common_tags # Target Group Tags 
-    } # END of Target Group-2: mytg2
-  } # END OF target_groups
+      protocol_version = "HTTP1"
+      # App2 Target Group - Targets
+      targets = {
+        my_app2_vm1 = {
+          target_id = module.ec2_private_app2.id[0]
+          port      = 80
+        },
+        my_app2_vm2 = {
+          target_id = module.ec2_private_app2.id[1]
+          port      = 80
+        }
+      }
+      tags =local.common_tags # Target Group Tags
+    }  
 ```
-
-### Step-09-02: Create Load Balancer Target Group Attachment
+### Step-09-03: Add HTTPS Listener
+1. Associate SSL Certificate ARN
+2. Add fixed response for Root Context `/*`
 ```t
-# mytg1: LB Target Group Attachment
-resource "aws_lb_target_group_attachment" "mytg1" {
-  for_each = {for k,v in module.ec2_private_app1: k => v}
-  target_group_arn = module.alb.target_groups["mytg1"].arn
-  target_id        = each.value.id
-  port             = 80
-}
- 
-# mytg2: LB Target Group Attachment
-resource "aws_lb_target_group_attachment" "mytg2" {
-  for_each = {for k,v in module.ec2_private_app2: k => v}
-  target_group_arn = module.alb.target_groups["mytg2"].arn
-  target_id        = each.value.id
-  port             = 80
-}
-```
-
-### Step-09-03: Listener-1: HTTP to HTTPS Redirect
-```t
-    # Listener-1: my-http-https-redirect
-    my-http-https-redirect = {
-      port     = 80
-      protocol = "HTTP"
-      redirect = {
-        port        = "443"
-        protocol    = "HTTPS"
-        status_code = "HTTP_301"
-      }    
-    }# End my-http-https-redirect Listener
-
-```
-### Step-09-04: Create HTTPS Listener with HTTP Rules for App1 and App2
-```t
-    # Listener-2: my-https-listener
-    my-https-listener = {
-      port                        = 443
-      protocol                    = "HTTPS"
-      ssl_policy                  = "ELBSecurityPolicy-TLS13-1-2-Res-2021-06"
-      certificate_arn             = module.acm.acm_certificate_arn
-
-       # Fixed Response for Root Context 
-       fixed_response = {
+  # HTTPS Listener
+  https_listeners = [
+    # HTTPS Listener Index = 0 for HTTPS 443
+    {
+      port               = 443
+      protocol           = "HTTPS"
+      certificate_arn    = module.acm.this_acm_certificate_arn
+      action_type = "fixed-response"
+      fixed_response = {
         content_type = "text/plain"
         message_body = "Fixed Static message - for Root Context"
         status_code  = "200"
-      }# End of Fixed Response
-
-      # Load Balancer Rules
-      rules = {
-        # Rule-1: myapp1-rule
-        myapp1-rule = {
-          actions = [{
-            type = "weighted-forward"
-            target_groups = [
-              {
-                target_group_key = "mytg1"
-                weight           = 1
-              }
-            ]
-            stickiness = {
-              enabled  = true
-              duration = 3600
-            }
-          }]
-          conditions = [{
-            path_pattern = {
-              values = ["/app1*"]
-            }
-          }]
-        }# End of myapp1-rule
-        # Rule-2: myapp2-rule
-        myapp2-rule = {
-          actions = [{
-            type = "weighted-forward"
-            target_groups = [
-              {
-                target_group_key = "mytg2"
-                weight           = 1
-              }
-            ]
-            stickiness = {
-              enabled  = true
-              duration = 3600
-            }
-          }]
-          conditions = [{
-            path_pattern = {
-              values = ["/app2*"]
-            }
-          }]
-        }# End of myapp2-rule Block
-      }# End Rules Block
-    }# End my-https-listener Block
+      }
+    }, 
+  ]
 ```
+### Step-09-04: Add HTTPS Listener Rules
+- Understand about `https_listener_index`
+- Create Rule-1: /app1* should go to App1 EC2 Instances
+- Understand about `target_group_index`
+- Create Rule-2: /app2* should go to App2 EC2 Instances    
+```t
 
+  # HTTPS Listener Rules
+  https_listener_rules = [
+    # Rule-1: /app1* should go to App1 EC2 Instances
+    { 
+      https_listener_index = 0
+      actions = [
+        {
+          type               = "forward"
+          target_group_index = 0
+        }
+      ]
+      conditions = [{
+        path_patterns = ["/app1*"]
+      }]
+    },
+    # Rule-2: /app2* should go to App2 EC2 Instances    
+    {
+      https_listener_index = 0
+      actions = [
+        {
+          type               = "forward"
+          target_group_index = 1
+        }
+      ]
+      conditions = [{
+        path_patterns = ["/app2*"]
+      }]
+    },    
+  ]
+```
 ## Step-10: c12-route53-dnsregistration.tf
 - [Route53 Record Resource](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/route53_record)
 ```t
 # DNS Registration 
 resource "aws_route53_record" "apps_dns" {
-  zone_id = data.aws_route53_zone.mydomain.zone_id 
-  name    = "apps.devopsincloud.com"
+  zone_id = data.aws_route53_zone.mydomain.id
+  name    = "apps9.devopsincloud.com"
   type    = "A"
+
   alias {
-    #name                   = module.alb.this_lb_dns_name
-    #zone_id                = module.alb.this_lb_zone_id
-    name                   = module.alb.dns_name
-    zone_id                = module.alb.zone_id
+    name                   = module.alb.this_lb_dns_name
+    zone_id                = module.alb.this_lb_zone_id
     evaluate_target_health = true
-  }  
+  }
 }
 ```
 
